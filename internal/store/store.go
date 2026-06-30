@@ -196,7 +196,24 @@ WHERE ts >= ?`, since.UTC().Format(time.RFC3339Nano)).Scan(
 	return out, err
 }
 
+func (d *DB) FirstEventAt(ctx context.Context) (*time.Time, error) {
+	var first sql.NullString
+	err := d.db.QueryRowContext(ctx, `SELECT MIN(ts) FROM telemetry_events`).Scan(&first)
+	if err != nil {
+		return nil, err
+	}
+	if !first.Valid {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, first.String)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
 func (d *DB) Series(ctx context.Context, since time.Time) ([]SeriesPoint, error) {
+	since = startOfUTCDay(since)
 	rows, err := d.db.QueryContext(ctx, `
 SELECT
 	strftime('%Y-%m-%d', ts),
@@ -218,7 +235,7 @@ ORDER BY 1`, since.UTC().Format(time.RFC3339Nano))
 	}
 	defer rows.Close()
 
-	out := make([]SeriesPoint, 0)
+	byBucket := make(map[string]SeriesPoint)
 	for rows.Next() {
 		var point SeriesPoint
 		if err := rows.Scan(
@@ -228,9 +245,28 @@ ORDER BY 1`, since.UTC().Format(time.RFC3339Nano))
 		); err != nil {
 			return nil, err
 		}
+		byBucket[point.Bucket] = point
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	today := startOfUTCDay(time.Now().UTC())
+	out := make([]SeriesPoint, 0)
+	for day := since; !day.After(today); day = day.AddDate(0, 0, 1) {
+		bucket := day.Format("2006-01-02")
+		point, ok := byBucket[bucket]
+		if !ok {
+			point = SeriesPoint{Bucket: bucket}
+		}
 		out = append(out, point)
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+func startOfUTCDay(t time.Time) time.Time {
+	year, month, day := t.UTC().Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 func (d *DB) ModelBreakdown(ctx context.Context, since time.Time) ([]BreakdownRow, error) {

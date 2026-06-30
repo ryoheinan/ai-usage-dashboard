@@ -140,6 +140,75 @@ func TestHandleLogsReadsJSONStringBodyAndStringNumbers(t *testing.T) {
 	}
 }
 
+func TestHandleLogsExpandsNestedJSONStringAttributes(t *testing.T) {
+	mem := &memoryStore{}
+	handler := NewHandler(mem, pricing.Catalog{
+		"gpt-test": {InputPerMTok: 1, CachedInputPerMTok: 0.1, OutputPerMTok: 5},
+	})
+	mux := http.NewServeMux()
+	handler.Register(mux)
+
+	body, err := proto.Marshal(jsonStringAttributeRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", res.Code, res.Body.String())
+	}
+	if len(mem.events) != 1 {
+		t.Fatalf("stored events = %d, want 1", len(mem.events))
+	}
+	event := mem.events[0]
+	if event.Name != "codex.sse_event" || event.Kind != "response.completed" {
+		t.Fatalf("unexpected event identity: %+v", event)
+	}
+	if event.Model != "gpt-test" {
+		t.Fatalf("Model = %q", event.Model)
+	}
+	if event.InputTokens != 3000 || event.CachedInputTokens != 750 || event.OutputTokens != 450 || event.ReasoningOutputTokens != 25 || event.TotalTokens != 3450 {
+		t.Fatalf("unexpected JSON attribute usage: %+v", event)
+	}
+}
+
+func TestHandleLogsReadsCodexTokenCountFields(t *testing.T) {
+	mem := &memoryStore{}
+	handler := NewHandler(mem, pricing.Catalog{
+		"gpt-test": {InputPerMTok: 1, CachedInputPerMTok: 0.1, OutputPerMTok: 5},
+	})
+	mux := http.NewServeMux()
+	handler.Register(mux)
+
+	body, err := proto.Marshal(tokenCountFieldRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", res.Code, res.Body.String())
+	}
+	if len(mem.events) != 1 {
+		t.Fatalf("stored events = %d, want 1", len(mem.events))
+	}
+	event := mem.events[0]
+	if event.InputTokens != 4000 || event.CachedInputTokens != 1000 || event.OutputTokens != 600 || event.ReasoningOutputTokens != 50 || event.TotalTokens != 4600 {
+		t.Fatalf("unexpected token count fields: %+v", event)
+	}
+	if event.EstimatedCostUSD <= 0 {
+		t.Fatalf("EstimatedCostUSD = %v, want positive", event.EstimatedCostUSD)
+	}
+}
+
 func sampleRequest() *collogspb.ExportLogsServiceRequest {
 	return &collogspb.ExportLogsServiceRequest{
 		ResourceLogs: []*logspb.ResourceLogs{{
@@ -196,6 +265,65 @@ func jsonStringBodyRequest() *collogspb.ExportLogsServiceRequest {
 					Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{
 						StringValue: string(encoded),
 					}},
+				}},
+			}},
+		}},
+	}
+}
+
+func jsonStringAttributeRequest() *collogspb.ExportLogsServiceRequest {
+	payload := map[string]any{
+		"kind":  "response.completed",
+		"model": "gpt-test",
+		"usage": map[string]any{
+			"input_tokens":            3000,
+			"cached_input_tokens":     750,
+			"output_tokens":           450,
+			"reasoning_output_tokens": 25,
+			"total_tokens":            3450,
+		},
+	}
+	encodedPayload, _ := json.Marshal(payload)
+	return &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: []*logspb.ResourceLogs{{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					kv("model", "gpt-fallback"),
+				},
+			},
+			ScopeLogs: []*logspb.ScopeLogs{{
+				LogRecords: []*logspb.LogRecord{{
+					TimeUnixNano: uint64(time.Date(2026, 6, 30, 1, 2, 3, 0, time.UTC).UnixNano()),
+					Attributes: []*commonpb.KeyValue{
+						kv("event.name", "codex.sse_event"),
+						kv("payload", string(encodedPayload)),
+					},
+				}},
+			}},
+		}},
+	}
+}
+
+func tokenCountFieldRequest() *collogspb.ExportLogsServiceRequest {
+	return &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: []*logspb.ResourceLogs{{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					kv("model", "gpt-test"),
+				},
+			},
+			ScopeLogs: []*logspb.ScopeLogs{{
+				LogRecords: []*logspb.LogRecord{{
+					TimeUnixNano: uint64(time.Date(2026, 6, 30, 1, 2, 3, 0, time.UTC).UnixNano()),
+					Attributes: []*commonpb.KeyValue{
+						kv("event.name", "codex.sse_event"),
+						kv("event.kind", "response.completed"),
+						kvi("input_token_count", 4000),
+						kvi("cached_token_count", 1000),
+						kvi("output_token_count", 600),
+						kvi("reasoning_token_count", 50),
+						kvi("tool_token_count", 4600),
+					},
 				}},
 			}},
 		}},

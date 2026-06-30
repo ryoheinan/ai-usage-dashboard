@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -106,57 +109,124 @@ func (h *Handler) normalizeRecord(resourceAttrs map[string]any, record *logspb.L
 	flat := flatten(merged)
 
 	name := firstString(flat, "event.name", "name", "codex.event_name", "type", "payload.type")
-	model := firstString(flat, "model", "codex.model", "gen_ai.request.model", "gen_ai.response.model", "payload.model")
+	model := firstString(flat, "payload.model", "model", "codex.model", "gen_ai.request.model", "gen_ai.response.model")
 	conversationID := firstString(flat, "conversation.id", "conversation_id", "codex.conversation_id", "thread.id", "thread_id", "payload.conversation_id", "payload.thread_id")
 	kind := firstString(flat, "event.kind", "kind", "sse.event", "sse_event", "payload.kind")
 	success, hasSuccess := firstBool(flat, "success", "codex.success", "http.status_code", "http.response.status_code", "status_code", "payload.success", "payload.status_code", "payload.http.status_code")
 	duration := firstInt(flat, "duration_ms", "codex.duration_ms", "durationMilliseconds", "payload.duration_ms", "payload.durationMilliseconds")
 	input := firstInt64(flat,
 		"input_tokens",
+		"input_token_count",
+		"inputTokens",
 		"usage.input_tokens",
+		"usage.input_token_count",
+		"usage.inputTokens",
 		"codex.usage.input_tokens",
+		"codex.usage.input_token_count",
+		"codex.usage.inputTokens",
 		"gen_ai.usage.input_tokens",
+		"gen_ai.usage.input_token_count",
+		"gen_ai.usage.inputTokens",
 		"payload.usage.input_tokens",
+		"payload.usage.input_token_count",
+		"payload.usage.inputTokens",
 		"payload.info.last_token_usage.input_tokens",
+		"payload.info.last_token_usage.input_token_count",
+		"payload.info.last_token_usage.inputTokens",
 		"payload.info.total_token_usage.input_tokens",
+		"payload.info.total_token_usage.input_token_count",
+		"payload.info.total_token_usage.inputTokens",
 	)
 	cached := firstInt64(flat,
 		"cached_input_tokens",
+		"cached_token_count",
+		"cachedInputTokens",
 		"usage.cached_input_tokens",
+		"usage.cached_token_count",
+		"usage.cachedInputTokens",
 		"codex.usage.cached_input_tokens",
+		"codex.usage.cached_token_count",
+		"codex.usage.cachedInputTokens",
 		"payload.usage.cached_input_tokens",
+		"payload.usage.cached_token_count",
+		"payload.usage.cachedInputTokens",
 		"payload.info.last_token_usage.cached_input_tokens",
+		"payload.info.last_token_usage.cached_token_count",
+		"payload.info.last_token_usage.cachedInputTokens",
 		"payload.info.total_token_usage.cached_input_tokens",
+		"payload.info.total_token_usage.cached_token_count",
+		"payload.info.total_token_usage.cachedInputTokens",
 	)
 	output := firstInt64(flat,
 		"output_tokens",
+		"output_token_count",
+		"outputTokens",
 		"usage.output_tokens",
+		"usage.output_token_count",
+		"usage.outputTokens",
 		"codex.usage.output_tokens",
+		"codex.usage.output_token_count",
+		"codex.usage.outputTokens",
 		"gen_ai.usage.output_tokens",
+		"gen_ai.usage.output_token_count",
+		"gen_ai.usage.outputTokens",
 		"payload.usage.output_tokens",
+		"payload.usage.output_token_count",
+		"payload.usage.outputTokens",
 		"payload.info.last_token_usage.output_tokens",
+		"payload.info.last_token_usage.output_token_count",
+		"payload.info.last_token_usage.outputTokens",
 		"payload.info.total_token_usage.output_tokens",
+		"payload.info.total_token_usage.output_token_count",
+		"payload.info.total_token_usage.outputTokens",
 	)
 	reasoning := firstInt64(flat,
 		"reasoning_output_tokens",
+		"reasoning_token_count",
+		"reasoningOutputTokens",
 		"usage.reasoning_output_tokens",
+		"usage.reasoning_token_count",
+		"usage.reasoningOutputTokens",
 		"codex.usage.reasoning_output_tokens",
+		"codex.usage.reasoning_token_count",
+		"codex.usage.reasoningOutputTokens",
 		"payload.usage.reasoning_output_tokens",
+		"payload.usage.reasoning_token_count",
+		"payload.usage.reasoningOutputTokens",
 		"payload.info.last_token_usage.reasoning_output_tokens",
+		"payload.info.last_token_usage.reasoning_token_count",
+		"payload.info.last_token_usage.reasoningOutputTokens",
 		"payload.info.total_token_usage.reasoning_output_tokens",
+		"payload.info.total_token_usage.reasoning_token_count",
+		"payload.info.total_token_usage.reasoningOutputTokens",
 	)
 	total := firstInt64(flat,
 		"total_tokens",
+		"tool_token_count",
+		"totalTokens",
 		"usage.total_tokens",
+		"usage.tool_token_count",
+		"usage.totalTokens",
 		"codex.usage.total_tokens",
+		"codex.usage.tool_token_count",
+		"codex.usage.totalTokens",
 		"gen_ai.usage.total_tokens",
+		"gen_ai.usage.tool_token_count",
+		"gen_ai.usage.totalTokens",
 		"payload.usage.total_tokens",
+		"payload.usage.tool_token_count",
+		"payload.usage.totalTokens",
 		"payload.info.last_token_usage.total_tokens",
+		"payload.info.last_token_usage.tool_token_count",
+		"payload.info.last_token_usage.totalTokens",
 		"payload.info.total_token_usage.total_tokens",
+		"payload.info.total_token_usage.tool_token_count",
+		"payload.info.total_token_usage.totalTokens",
 	)
 	if total == 0 {
 		total = input + output
 	}
+	logDiagnosticFields(name, kind, flat, input, cached, output, reasoning, total)
 
 	var successPtr *bool
 	if hasSuccess {
@@ -198,6 +268,20 @@ func flatten(values map[string]any) map[string]any {
 				}
 				walk(childKey, child)
 			}
+		case []any:
+			for index, child := range typed {
+				childKey := strconv.Itoa(index)
+				if prefix != "" {
+					childKey = prefix + "." + childKey
+				}
+				walk(childKey, child)
+			}
+		case string:
+			if decoded, ok := decodeJSONObjectOrArray(typed); ok {
+				walk(prefix, decoded)
+				return
+			}
+			out[prefix] = value
 		default:
 			out[prefix] = value
 		}
@@ -206,6 +290,26 @@ func flatten(values map[string]any) map[string]any {
 		walk(key, value)
 	}
 	return out
+}
+
+func decodeJSONObjectOrArray(raw string) (any, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, false
+	}
+	if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
+		return nil, false
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return nil, false
+	}
+	switch decoded.(type) {
+	case map[string]any, []any:
+		return decoded, true
+	default:
+		return nil, false
+	}
 }
 
 func attrs(kvs []*commonpb.KeyValue) map[string]any {
@@ -345,4 +449,36 @@ func countContentFields(values map[string]any) int {
 		}
 	}
 	return count
+}
+
+func logDiagnosticFields(name, kind string, values map[string]any, input, cached, output, reasoning, total int64) {
+	if os.Getenv("CUA_DEBUG_OTEL_KEYS") == "" {
+		return
+	}
+	if !strings.Contains(name, "sse") && kind != "response.completed" {
+		return
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		normalized := strings.ToLower(key)
+		if strings.Contains(normalized, "token") ||
+			strings.Contains(normalized, "usage") ||
+			strings.Contains(normalized, "model") ||
+			strings.Contains(normalized, "event") ||
+			strings.Contains(normalized, "type") ||
+			strings.Contains(normalized, "kind") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	slog.Info("otel diagnostic fields",
+		"name", name,
+		"kind", kind,
+		"input_tokens", input,
+		"cached_input_tokens", cached,
+		"output_tokens", output,
+		"reasoning_output_tokens", reasoning,
+		"total_tokens", total,
+		"keys", strings.Join(keys, ","),
+	)
 }
