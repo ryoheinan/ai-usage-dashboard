@@ -1,0 +1,13 @@
+services:
+  codex-usage-analytics:
+    build: .
+    ports:
+      - "4318:4318"
+    volumes:
+      - codex-usage-data:/data
+    environment:
+      CUA_ADDR: ":4318"
+      CUA_DB: "/data/codex-usage.sqlite"
+
+volumes:
+  codex-usage-data:

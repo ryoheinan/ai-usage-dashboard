@@ -1,0 +1,22 @@
+FROM golang:1.23-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -o /out/codex-usage-analytics ./cmd/codex-usage-analytics
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build /out/codex-usage-analytics /app/codex-usage-analytics
+VOLUME ["/data"]
+ENV CUA_ADDR=:4318
+ENV CUA_DB=/data/codex-usage.sqlite
+EXPOSE 4318
+
+ENTRYPOINT ["/app/codex-usage-analytics"]
