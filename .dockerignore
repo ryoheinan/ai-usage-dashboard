@@ -1,0 +1,8 @@
+.git
+.codex
+data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.test
+*.out
