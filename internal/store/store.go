@@ -218,7 +218,7 @@ ORDER BY 1`, since.UTC().Format(time.RFC3339Nano))
 	}
 	defer rows.Close()
 
-	var out []SeriesPoint
+	out := make([]SeriesPoint, 0)
 	for rows.Next() {
 		var point SeriesPoint
 		if err := rows.Scan(
@@ -245,7 +245,7 @@ ORDER BY 4 DESC, 3 DESC`, since.UTC().Format(time.RFC3339Nano))
 	}
 	defer rows.Close()
 
-	var out []BreakdownRow
+	out := make([]BreakdownRow, 0)
 	for rows.Next() {
 		var row BreakdownRow
 		if err := rows.Scan(&row.Model, &row.Events, &row.TotalTokens, &row.EstimatedCostUSD); err != nil {

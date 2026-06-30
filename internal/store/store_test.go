@@ -48,3 +48,27 @@ func TestStoreSummaryAndHealth(t *testing.T) {
 		t.Fatalf("unexpected health: %+v", health)
 	}
 }
+
+func TestStoreReturnsEmptySlices(t *testing.T) {
+	db, err := Open(t.TempDir() + "/test.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	series, err := db.Series(context.Background(), time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if series == nil || len(series) != 0 {
+		t.Fatalf("Series() = %#v, want empty non-nil slice", series)
+	}
+
+	models, err := db.ModelBreakdown(context.Background(), time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models == nil || len(models) != 0 {
+		t.Fatalf("ModelBreakdown() = %#v, want empty non-nil slice", models)
+	}
+}
