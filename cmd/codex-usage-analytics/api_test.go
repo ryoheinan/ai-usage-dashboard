@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ryohei/codex-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-analytics/internal/store"
 )
 
 func TestAPIEmptyCollectionsEncodeAsArrays(t *testing.T) {

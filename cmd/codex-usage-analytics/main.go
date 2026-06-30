@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ryohei/codex-usage-analytics/internal/ingest"
-	"github.com/ryohei/codex-usage-analytics/internal/pricing"
-	"github.com/ryohei/codex-usage-analytics/internal/store"
-	"github.com/ryohei/codex-usage-analytics/internal/web"
+	"github.com/ryoheinan/ai-usage-analytics/internal/ingest"
+	"github.com/ryoheinan/ai-usage-analytics/internal/pricing"
+	"github.com/ryoheinan/ai-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-analytics/internal/web"
 )
 
 func main() {

@@ -16,8 +16,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ryohei/codex-usage-analytics/internal/pricing"
-	"github.com/ryohei/codex-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-analytics/internal/pricing"
+	"github.com/ryoheinan/ai-usage-analytics/internal/store"
 )
 
 type Handler struct {

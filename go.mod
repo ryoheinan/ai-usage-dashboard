@@ -1,4 +1,4 @@
-module github.com/ryohei/codex-usage-analytics
+module github.com/ryoheinan/ai-usage-analytics
 
 go 1.23.0
 
