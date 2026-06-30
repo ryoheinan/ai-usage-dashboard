@@ -56,12 +56,44 @@ dt {
   color: var(--muted);
 }
 
-button {
+a {
+  color: var(--accent);
+}
+
+button,
+select {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 6px;
   padding: 8px 12px;
+  font: inherit;
+}
+
+button {
   cursor: pointer;
+}
+
+.controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.controls label {
+  display: grid;
+  gap: 4px;
+}
+
+.controls label span {
+  font-size: 11px;
+}
+
+.metrics small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .grid {
@@ -96,6 +128,13 @@ article,
   margin-top: 8px;
 }
 
+.pricing-note {
+  margin-top: 8px;
+  max-width: 28ch;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .secondary strong {
   font-size: 20px;
 }
@@ -106,18 +145,60 @@ article,
 
 .chart {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22px, 1fr));
-  align-items: end;
-  gap: 6px;
+  grid-auto-columns: 38px;
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  align-items: stretch;
+  gap: 8px;
   height: 210px;
+  padding-top: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+}
+
+.chart-item {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 18px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bar-track {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  min-height: 0;
   border-bottom: 1px solid var(--line);
-  padding-top: 12px;
+  background: repeating-linear-gradient(
+    to top,
+    transparent 0,
+    transparent 39px,
+    rgba(216, 222, 230, 0.75) 40px
+  );
 }
 
 .bar {
+  width: min(34px, 68%);
   min-height: 2px;
   background: var(--accent);
-  border-radius: 4px 4px 0 0;
+  border-radius: 5px 5px 0 0;
+}
+
+.bar.empty {
+  width: 1px;
+  min-height: 100%;
+  background: var(--line);
+  opacity: 0.8;
+}
+
+.chart-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 table {
@@ -162,6 +243,15 @@ dd {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .controls {
+    width: 100%;
+  }
+
+  .controls label,
+  .controls select {
+    width: 100%;
   }
 
   .metrics,

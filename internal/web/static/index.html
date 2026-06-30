@@ -13,14 +13,33 @@
           <h1>Codex Usage Analytics</h1>
           <p>Local OTel telemetry only. Costs are estimates, not billing data.</p>
         </div>
-        <button id="refresh" type="button">Refresh</button>
+        <div class="controls">
+          <label>
+            <span>Range</span>
+            <select id="range">
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="all">All time</option>
+            </select>
+          </label>
+          <button id="refresh" type="button">Refresh</button>
+        </div>
       </header>
 
       <section class="grid metrics" aria-label="usage summary">
-        <article><span>Estimated cost</span><strong id="cost">$0.0000</strong></article>
-        <article><span>Total tokens</span><strong id="tokens">0</strong></article>
-        <article><span>Requests</span><strong id="requests">0</strong></article>
-        <article><span>Failures</span><strong id="failures">0</strong></article>
+        <article class="cost-card">
+          <span>Estimated cost <small id="costRange">Last 7 days</small></span>
+          <strong id="cost">$0.0000</strong>
+          <p class="pricing-note">
+            Based on a local pricing table from
+            <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI API pricing</a>.
+            Estimates may become stale.
+          </p>
+        </article>
+        <article><span>Total tokens <small id="tokensRange">Last 7 days</small></span><strong id="tokens">0</strong></article>
+        <article><span>Requests <small id="requestsRange">Last 7 days</small></span><strong id="requests">0</strong></article>
+        <article><span>Failures <small id="failuresRange">Last 7 days</small></span><strong id="failures">0</strong></article>
       </section>
 
       <section class="grid detail">
