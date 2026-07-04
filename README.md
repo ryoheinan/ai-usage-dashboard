@@ -61,3 +61,7 @@ go test ./...
 go build ./...
 docker build .
 ```
+
+## License
+
+Licensed under [Apache License 2.0](LICENSE).
