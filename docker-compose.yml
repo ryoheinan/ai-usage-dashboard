@@ -1,14 +1,16 @@
+name: ai-usage-dashboard
+
 services:
-  ai-tool-analytics:
+  ai-usage-dashboard:
     build: .
     ports:
       - "4318:4318"
     volumes:
-      - ai-tool-analytics-data:/data
+      - ai-usage-dashboard-data:/data
     environment:
       CUA_ADDR: ":4318"
-      CUA_DB: "/data/ai-tool-analytics.sqlite"
+      CUA_DB: "/data/ai-usage-dashboard.sqlite"
       CUA_DEBUG_OTEL_KEYS: "${CUA_DEBUG_OTEL_KEYS:-}"
 
 volumes:
-  ai-tool-analytics-data:
+  ai-usage-dashboard-data:

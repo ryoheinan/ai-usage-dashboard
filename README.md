@@ -1,4 +1,4 @@
-# AI Tool Analytics
+# AI Usage Dashboard
 
 A local dashboard for AI coding tool usage.
 
@@ -64,13 +64,13 @@ Keep prompt, assistant response, raw API body, and tool-content logging disabled
 ## Local Development
 
 ```bash
-go run ./cmd/ai-tool-analytics
+go run ./cmd/ai-usage-dashboard
 ```
 
 Environment variables:
 
 - `CUA_ADDR`: listen address, default `:4318`
-- `CUA_DB`: SQLite path, default `data/ai-tool-analytics.sqlite`
+- `CUA_DB`: SQLite path, default `data/ai-usage-dashboard.sqlite`
 - `CUA_DEBUG_OTEL_KEYS`: when set, logs selected OTel field keys for diagnostics without storing raw payloads
 
 ## Verification

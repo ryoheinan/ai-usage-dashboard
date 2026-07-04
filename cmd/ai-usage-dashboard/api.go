@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ryoheinan/ai-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
 )
 
 func registerAPI(mux *http.ServeMux, db *store.DB) {

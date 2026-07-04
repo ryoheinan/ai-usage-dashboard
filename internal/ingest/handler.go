@@ -21,8 +21,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ryoheinan/ai-usage-analytics/internal/pricing"
-	"github.com/ryoheinan/ai-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/pricing"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
 )
 
 const (

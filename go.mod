@@ -1,4 +1,4 @@
-module github.com/ryoheinan/ai-usage-analytics
+module github.com/ryoheinan/ai-usage-dashboard
 
 go 1.23.0
 

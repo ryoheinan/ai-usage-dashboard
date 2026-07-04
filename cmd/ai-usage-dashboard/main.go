@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ryoheinan/ai-usage-analytics/internal/ingest"
-	"github.com/ryoheinan/ai-usage-analytics/internal/pricing"
-	"github.com/ryoheinan/ai-usage-analytics/internal/store"
-	"github.com/ryoheinan/ai-usage-analytics/internal/web"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/ingest"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/pricing"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/web"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 func run() error {
 	var (
 		addr   = flag.String("addr", envOrDefault("CUA_ADDR", ":4318"), "HTTP listen address")
-		dbPath = flag.String("db", envOrDefault("CUA_DB", "data/ai-tool-analytics.sqlite"), "SQLite database path")
+		dbPath = flag.String("db", envOrDefault("CUA_DB", "data/ai-usage-dashboard.sqlite"), "SQLite database path")
 	)
 	flag.Parse()
 

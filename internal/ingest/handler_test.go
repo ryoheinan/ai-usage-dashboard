@@ -17,8 +17,8 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ryoheinan/ai-usage-analytics/internal/pricing"
-	"github.com/ryoheinan/ai-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/pricing"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
 )
 
 type memoryStore struct {

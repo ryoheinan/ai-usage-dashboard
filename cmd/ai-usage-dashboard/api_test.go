@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ryoheinan/ai-usage-analytics/internal/store"
+	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
 )
 
 func TestAPIEmptyCollectionsEncodeAsArrays(t *testing.T) {
