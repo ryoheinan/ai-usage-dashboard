@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Codex Usage Analytics</title>
+    <title>AI Tool Analytics</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main>
       <header class="topbar">
         <div>
-          <h1>Codex Usage Analytics</h1>
-          <p>Local OTel telemetry only. Costs are estimates, not billing data.</p>
+          <h1>AI Tool Analytics</h1>
+          <p>Local OTel telemetry for Codex and Claude Code. Costs are estimates, not billing data.</p>
         </div>
         <div class="controls">
           <label>
@@ -23,6 +23,14 @@
               <option value="all">All time</option>
             </select>
           </label>
+          <label>
+            <span>Source</span>
+            <select id="source">
+              <option value="all" selected>All sources</option>
+              <option value="codex">Codex</option>
+              <option value="claude-code">Claude Code</option>
+            </select>
+          </label>
           <button id="refresh" type="button">Refresh</button>
         </div>
       </header>
@@ -32,9 +40,11 @@
           <span>Estimated cost <small id="costRange">Last 7 days</small></span>
           <strong id="cost">$0.0000</strong>
           <p class="pricing-note">
-            Based on a local pricing table from
-            <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI API pricing</a>.
-            Estimates may become stale.
+            Estimated from telemetry and local pricing references:
+            <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI</a>
+            and
+            <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noreferrer">Anthropic</a>.
+            Not billing data.
           </p>
         </article>
         <article><span>Total tokens <small id="tokensRange">Last 7 days</small></span><strong id="tokens">0</strong></article>
@@ -51,9 +61,18 @@
           <h2>Model Breakdown</h2>
           <table>
             <thead>
-              <tr><th>Model</th><th>Tokens</th><th>Cost</th></tr>
+              <tr><th>Source</th><th>Model</th><th>Tokens</th><th>Cost</th></tr>
             </thead>
             <tbody id="models"></tbody>
+          </table>
+        </article>
+        <article class="panel">
+          <h2>Source Breakdown</h2>
+          <table>
+            <thead>
+              <tr><th>Source</th><th>Requests</th><th>Tokens</th><th>Cost</th></tr>
+            </thead>
+            <tbody id="sources"></tbody>
           </table>
         </article>
       </section>
@@ -61,6 +80,7 @@
       <section class="grid metrics secondary" aria-label="token details">
         <article><span>Input</span><strong id="input">0</strong></article>
         <article><span>Cached input</span><strong id="cached">0</strong></article>
+        <article><span>Cache creation</span><strong id="cacheCreation">0</strong></article>
         <article><span>Output</span><strong id="output">0</strong></article>
         <article><span>Reasoning</span><strong id="reasoning">0</strong></article>
       </section>

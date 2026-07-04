@@ -107,7 +107,7 @@ button {
 }
 
 .detail {
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(260px, 0.7fr));
   margin-bottom: 12px;
 }
 
@@ -137,6 +137,10 @@ article,
 
 .secondary strong {
   font-size: 20px;
+}
+
+.secondary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .panel {
@@ -242,6 +246,11 @@ dd {
 @media (max-width: 760px) {
   .topbar,
   .detail {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics,
+  .secondary {
     grid-template-columns: 1fr;
   }
 

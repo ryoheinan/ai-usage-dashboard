@@ -11,12 +11,21 @@ function text(id, value) {
   document.getElementById(id).textContent = value;
 }
 
-function selectedRange() {
-  const value = document.getElementById("range").value;
-  if (value === "all") {
-    return { query: "range=all", label: "All time" };
+function selectedFilters() {
+  const rangeValue = document.getElementById("range").value;
+  const source = document.getElementById("source").value;
+  const params = new URLSearchParams();
+  let label = `Last ${rangeValue} days`;
+  if (rangeValue === "all") {
+    params.set("range", "all");
+    label = "All time";
+  } else {
+    params.set("days", rangeValue);
   }
-  return { query: `days=${value}`, label: `Last ${value} days` };
+  if (source !== "all") {
+    params.set("source", source);
+  }
+  return { query: params.toString(), label };
 }
 
 function setRangeLabels(label) {
@@ -57,24 +66,42 @@ function renderModels(rows) {
   body.innerHTML = "";
   for (const row of rows) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td></td><td>${fmt.format(row.totalTokens)}</td><td>${usd.format(row.estimatedCostUsd)}</td>`;
-    tr.firstChild.textContent = row.model;
+    tr.innerHTML = `<td></td><td></td><td>${fmt.format(row.totalTokens)}</td><td>${usd.format(row.estimatedCostUsd)}</td>`;
+    tr.children[0].textContent = row.source;
+    tr.children[1].textContent = row.model;
     body.appendChild(tr);
   }
   if (rows.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="3">No telemetry yet</td>`;
+    tr.innerHTML = `<td colspan="4">No telemetry yet</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function renderSources(rows) {
+  const body = document.getElementById("sources");
+  body.innerHTML = "";
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td></td><td>${fmt.format(row.requests)}</td><td>${fmt.format(row.totalTokens)}</td><td>${usd.format(row.estimatedCostUsd)}</td>`;
+    tr.firstChild.textContent = row.source;
+    body.appendChild(tr);
+  }
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="4">No telemetry yet</td>`;
     body.appendChild(tr);
   }
 }
 
 async function refresh() {
-  const range = selectedRange();
-  setRangeLabels(range.label);
-  const [summary, series, models, health] = await Promise.all([
-    getJSON(`/api/summary?${range.query}`),
-    getJSON(`/api/series?${range.query}`),
-    getJSON(`/api/breakdown/models?${range.query}`),
+  const filters = selectedFilters();
+  setRangeLabels(filters.label);
+  const [summary, series, models, sources, health] = await Promise.all([
+    getJSON(`/api/summary?${filters.query}`),
+    getJSON(`/api/series?${filters.query}`),
+    getJSON(`/api/breakdown/models?${filters.query}`),
+    getJSON(`/api/breakdown/sources?${filters.query}`),
     getJSON("/api/health"),
   ]);
 
@@ -84,6 +111,7 @@ async function refresh() {
   text("failures", fmt.format(summary.failures));
   text("input", fmt.format(summary.inputTokens));
   text("cached", fmt.format(summary.cachedInputTokens));
+  text("cacheCreation", fmt.format(summary.cacheCreationTokens));
   text("output", fmt.format(summary.outputTokens));
   text("reasoning", fmt.format(summary.reasoningOutputTokens));
   text("lastEvent", health.lastEventAt ? new Date(health.lastEventAt).toLocaleString() : "Never");
@@ -92,6 +120,7 @@ async function refresh() {
 
   renderChart(series);
   renderModels(models);
+  renderSources(sources);
 }
 
 function refreshDashboard() {
@@ -106,5 +135,6 @@ function refreshWhenVisible() {
 
 document.getElementById("refresh").addEventListener("click", refreshDashboard);
 document.getElementById("range").addEventListener("change", refreshDashboard);
+document.getElementById("source").addEventListener("change", refreshDashboard);
 document.addEventListener("visibilitychange", refreshWhenVisible);
 refreshDashboard();

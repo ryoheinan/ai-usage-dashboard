@@ -1,16 +1,16 @@
-# Codex Usage Analytics
+# AI Tool Analytics
 
-A local dashboard for Codex CLI usage when Codex is authenticated with an API key.
+A local dashboard for AI coding tool usage.
 
-The app receives opt-in OpenTelemetry logs from Codex CLI, stores analytics metadata in SQLite, and shows token usage plus estimated cost in a small web UI.
+The app receives opt-in OpenTelemetry from Codex CLI and Claude Code, stores analytics metadata in SQLite, and shows token usage plus estimated cost in a small web UI.
 
 ## Privacy Model
 
 - Input source is OpenTelemetry only.
-- The app does not read Codex internal files, local session JSONL, SQLite logs, or other private Codex state.
+- The app does not read Codex or Claude Code internal files, local session JSONL, SQLite logs, or other private tool state.
 - Prompt text, response text, command output, tool output snippets, and raw OTel payloads are not stored.
-- Cost is estimated from local token telemetry and the app pricing table. It is not OpenAI billing data.
-- The pricing table is maintained by hand from [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) and may become stale when prices or model names change.
+- Cost is estimated from local token telemetry, telemetry-provided cost fields, and the app pricing table. It is not provider billing data.
+- The pricing table is maintained by hand from [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) and [Anthropic API pricing](https://platform.claude.com/docs/en/about-claude/pricing), and may become stale when prices or model names change. Claude Code telemetry cost fields are used when present, but displayed costs are still estimates rather than billing data.
 
 ## Run With Docker
 
@@ -28,6 +28,8 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
 
 ## Configure Codex CLI
 
+See also [docs/codex-otel.md](docs/codex-otel.md).
+
 Add an OTel exporter to your Codex config:
 
 ```toml
@@ -42,16 +44,33 @@ exporter = { otlp-http = {
 
 The tool only provides this snippet. It does not modify `~/.codex/config.toml`.
 
+## Configure Claude Code
+
+See also [docs/claude-code-otel.md](docs/claude-code-otel.md).
+
+Configure Claude Code to export OTel metrics and logs over HTTP/protobuf:
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://localhost:4318/v1/logs
+```
+
+Keep prompt, assistant response, raw API body, and tool-content logging disabled unless you have a separate privacy review.
+
 ## Local Development
 
 ```bash
-go run ./cmd/codex-usage-analytics
+go run ./cmd/ai-tool-analytics
 ```
 
 Environment variables:
 
 - `CUA_ADDR`: listen address, default `:4318`
-- `CUA_DB`: SQLite path, default `data/codex-usage.sqlite`
+- `CUA_DB`: SQLite path, default `data/ai-tool-analytics.sqlite`
 - `CUA_DEBUG_OTEL_KEYS`: when set, logs selected OTel field keys for diagnostics without storing raw payloads
 
 ## Verification
