@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -82,6 +83,38 @@ type Health struct {
 	LastEventAt          *time.Time `json:"lastEventAt"`
 	AcceptedEvents       int64      `json:"acceptedEvents"`
 	DroppedContentFields int64      `json:"droppedContentFields"`
+}
+
+type PortableEvent struct {
+	Timestamp             string  `json:"timestamp"`
+	Source                string  `json:"source"`
+	ConversationID        string  `json:"conversationId"`
+	Model                 string  `json:"model"`
+	Name                  string  `json:"name"`
+	Kind                  string  `json:"kind"`
+	Success               *bool   `json:"success"`
+	DurationMS            *int64  `json:"durationMs"`
+	InputTokens           int64   `json:"inputTokens"`
+	CachedInputTokens     int64   `json:"cachedInputTokens"`
+	CacheCreationTokens   int64   `json:"cacheCreationTokens"`
+	OutputTokens          int64   `json:"outputTokens"`
+	ReasoningOutputTokens int64   `json:"reasoningOutputTokens"`
+	TotalTokens           int64   `json:"totalTokens"`
+	EstimatedCostUSD      float64 `json:"estimatedCostUsd"`
+	DroppedContentFields  int     `json:"droppedContentFields"`
+}
+
+type ImportMode string
+
+const (
+	ImportModeMerge   ImportMode = "merge"
+	ImportModeReplace ImportMode = "replace"
+)
+
+type ImportResult struct {
+	Inserted int `json:"inserted"`
+	Skipped  int `json:"skipped"`
+	Replaced int `json:"replaced"`
 }
 
 func Open(path string) (*DB, error) {
@@ -193,6 +226,100 @@ INSERT INTO telemetry_events (
 		}
 	}
 	return tx.Commit()
+}
+
+func (d *DB) ExportEvents(ctx context.Context, since time.Time, source string) ([]PortableEvent, error) {
+	filter, args := sourceFilter(since.UTC().Format(time.RFC3339Nano), source)
+	rows, err := d.db.QueryContext(ctx, `
+SELECT
+	ts, source, conversation_id, model, name, kind, success, duration_ms,
+	input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_output_tokens, total_tokens,
+	estimated_cost_usd, dropped_content_fields
+FROM telemetry_events
+WHERE `+filter+`
+ORDER BY ts ASC, id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]PortableEvent, 0)
+	for rows.Next() {
+		event, err := scanPortableEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) ImportEvents(ctx context.Context, events []PortableEvent, mode ImportMode) (ImportResult, error) {
+	normalized := make([]PortableEvent, 0, len(events))
+	for i, event := range events {
+		checked, err := normalizePortableEvent(event)
+		if err != nil {
+			return ImportResult{}, fmt.Errorf("event %d: %w", i, err)
+		}
+		normalized = append(normalized, checked)
+	}
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	defer tx.Rollback()
+
+	result := ImportResult{}
+	switch mode {
+	case ImportModeMerge:
+		existing, err := portableEventKeys(ctx, tx)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		stmt, err := preparePortableInsert(ctx, tx)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		defer stmt.Close()
+		for _, event := range normalized {
+			key := portableEventKey(event)
+			if existing[key] {
+				result.Skipped++
+				continue
+			}
+			if err := insertPortableEvent(ctx, stmt, event); err != nil {
+				return ImportResult{}, err
+			}
+			existing[key] = true
+			result.Inserted++
+		}
+	case ImportModeReplace:
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM telemetry_events`).Scan(&result.Replaced); err != nil {
+			return ImportResult{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM telemetry_events`); err != nil {
+			return ImportResult{}, err
+		}
+		stmt, err := preparePortableInsert(ctx, tx)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		defer stmt.Close()
+		for _, event := range normalized {
+			if err := insertPortableEvent(ctx, stmt, event); err != nil {
+				return ImportResult{}, err
+			}
+			result.Inserted++
+		}
+	default:
+		return ImportResult{}, fmt.Errorf("unsupported import mode %q", mode)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ImportResult{}, err
+	}
+	return result, nil
 }
 
 func (d *DB) Summary(ctx context.Context, since time.Time) (Summary, error) {
@@ -432,4 +559,144 @@ func NormalizeSource(source string) string {
 	default:
 		return ""
 	}
+}
+
+type portableScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPortableEvent(row portableScanner) (PortableEvent, error) {
+	var event PortableEvent
+	var success sql.NullInt64
+	var duration sql.NullInt64
+	err := row.Scan(
+		&event.Timestamp, &event.Source, &event.ConversationID, &event.Model, &event.Name, &event.Kind, &success, &duration,
+		&event.InputTokens, &event.CachedInputTokens, &event.CacheCreationTokens, &event.OutputTokens,
+		&event.ReasoningOutputTokens, &event.TotalTokens, &event.EstimatedCostUSD, &event.DroppedContentFields,
+	)
+	if err != nil {
+		return PortableEvent{}, err
+	}
+	if success.Valid {
+		value := success.Int64 != 0
+		event.Success = &value
+	}
+	if duration.Valid {
+		value := duration.Int64
+		event.DurationMS = &value
+	}
+	normalized, err := normalizePortableEvent(event)
+	if err != nil {
+		return PortableEvent{}, err
+	}
+	return normalized, nil
+}
+
+func normalizePortableEvent(event PortableEvent) (PortableEvent, error) {
+	if strings.TrimSpace(event.Timestamp) == "" {
+		return PortableEvent{}, errors.New("timestamp is required")
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, event.Timestamp)
+	if err != nil {
+		return PortableEvent{}, fmt.Errorf("invalid timestamp: %w", err)
+	}
+	event.Timestamp = timestamp.UTC().Format(time.RFC3339Nano)
+
+	if strings.TrimSpace(event.Source) == "" {
+		return PortableEvent{}, errors.New("source is required")
+	}
+	source := NormalizeSource(event.Source)
+	if source == "" {
+		return PortableEvent{}, fmt.Errorf("invalid source %q", event.Source)
+	}
+	event.Source = source
+
+	if event.DurationMS != nil && *event.DurationMS < 0 {
+		return PortableEvent{}, errors.New("durationMs must be non-negative")
+	}
+	if event.InputTokens < 0 || event.CachedInputTokens < 0 || event.CacheCreationTokens < 0 ||
+		event.OutputTokens < 0 || event.ReasoningOutputTokens < 0 || event.TotalTokens < 0 {
+		return PortableEvent{}, errors.New("token fields must be non-negative")
+	}
+	if event.EstimatedCostUSD < 0 {
+		return PortableEvent{}, errors.New("estimatedCostUsd must be non-negative")
+	}
+	if event.DroppedContentFields < 0 {
+		return PortableEvent{}, errors.New("droppedContentFields must be non-negative")
+	}
+	return event, nil
+}
+
+func portableEventKeys(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT
+	ts, source, conversation_id, model, name, kind, success, duration_ms,
+	input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_output_tokens, total_tokens,
+	estimated_cost_usd, dropped_content_fields
+FROM telemetry_events`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	keys := make(map[string]bool)
+	for rows.Next() {
+		event, err := scanPortableEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		keys[portableEventKey(event)] = true
+	}
+	return keys, rows.Err()
+}
+
+func portableEventKey(event PortableEvent) string {
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func preparePortableInsert(ctx context.Context, tx *sql.Tx) (*sql.Stmt, error) {
+	return tx.PrepareContext(ctx, `
+INSERT INTO telemetry_events (
+	ts, source, conversation_id, model, name, kind, success, duration_ms,
+	input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_output_tokens, total_tokens,
+	estimated_cost_usd, dropped_content_fields
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+}
+
+func insertPortableEvent(ctx context.Context, stmt *sql.Stmt, event PortableEvent) error {
+	var success any
+	if event.Success != nil {
+		if *event.Success {
+			success = 1
+		} else {
+			success = 0
+		}
+	}
+	var duration any
+	if event.DurationMS != nil {
+		duration = *event.DurationMS
+	}
+	_, err := stmt.ExecContext(ctx,
+		event.Timestamp,
+		event.Source,
+		event.ConversationID,
+		event.Model,
+		event.Name,
+		event.Kind,
+		success,
+		duration,
+		event.InputTokens,
+		event.CachedInputTokens,
+		event.CacheCreationTokens,
+		event.OutputTokens,
+		event.ReasoningOutputTokens,
+		event.TotalTokens,
+		event.EstimatedCostUSD,
+		event.DroppedContentFields,
+	)
+	return err
 }

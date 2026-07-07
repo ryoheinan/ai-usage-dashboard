@@ -9,6 +9,7 @@ The app receives opt-in OpenTelemetry from Codex CLI and Claude Code, stores ana
 - Input source is OpenTelemetry only.
 - The app does not read Codex or Claude Code internal files, local session JSONL, SQLite logs, or other private tool state.
 - Prompt text, response text, command output, tool output snippets, and raw OTel payloads are not stored.
+- JSON and CSV exports include only the derived telemetry metadata stored in SQLite. They do not include prompt text, response text, command output, tool output snippets, or raw OTel payloads.
 - Cost is estimated from local token telemetry, telemetry-provided cost fields, and the app pricing table. It is not provider billing data.
 - The pricing table is maintained by hand from [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) and [Anthropic API pricing](https://platform.claude.com/docs/en/about-claude/pricing), and may become stale when prices or model names change. Claude Code telemetry cost fields are used when present, but displayed costs are still estimates rather than billing data.
 
@@ -43,6 +44,17 @@ exporter = { otlp-http = {
 ```
 
 The tool only provides this snippet. It does not modify `~/.codex/config.toml`.
+
+## Data Portability
+
+The dashboard can export the currently selected range and source from the web UI.
+
+- Export JSON for backup, migration, and later import into another local dashboard database.
+- Export CSV for spreadsheet review. CSV files are export-only and cannot be imported.
+- Import JSON with `merge` to add missing events while skipping exact duplicates.
+- Import JSON with `replace` to delete all existing events and restore the uploaded export file.
+
+Import/export files contain only the derived telemetry metadata described in the privacy model. Use `replace` only when you intend to overwrite the current local database contents.
 
 ## Configure Claude Code
 

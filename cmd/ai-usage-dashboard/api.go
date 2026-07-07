@@ -1,13 +1,28 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/ryoheinan/ai-usage-dashboard/internal/store"
 )
+
+const (
+	exportAppName       = "ai-usage-dashboard"
+	exportSchemaVersion = 1
+	maxImportBytes      = 10 << 20
+)
+
+type exportBundle struct {
+	SchemaVersion int                   `json:"schemaVersion"`
+	ExportedAt    time.Time             `json:"exportedAt"`
+	App           string                `json:"app"`
+	Events        []store.PortableEvent `json:"events"`
+}
 
 func registerAPI(mux *http.ServeMux, db *store.DB) {
 	mux.HandleFunc("GET /api/summary", func(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +68,86 @@ func registerAPI(mux *http.ServeMux, db *store.DB) {
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		health, err := db.IngestionHealth(r.Context())
 		writeJSON(w, health, err)
+	})
+	mux.HandleFunc("GET /api/export.json", func(w http.ResponseWriter, r *http.Request) {
+		source := sourceParam(r)
+		since, err := sinceParam(r, db, 30, source)
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		events, err := db.ExportEvents(r.Context(), since, source)
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, exportFilename("json")))
+		_ = json.NewEncoder(w).Encode(exportBundle{
+			SchemaVersion: exportSchemaVersion,
+			ExportedAt:    time.Now().UTC(),
+			App:           exportAppName,
+			Events:        events,
+		})
+	})
+	mux.HandleFunc("GET /api/export.csv", func(w http.ResponseWriter, r *http.Request) {
+		source := sourceParam(r)
+		since, err := sinceParam(r, db, 30, source)
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		events, err := db.ExportEvents(r.Context(), since, source)
+		if err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, exportFilename("csv")))
+		if err := writeEventsCSV(w, events); err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+	})
+	mux.HandleFunc("POST /api/import", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxImportBytes)
+		if err := r.ParseMultipartForm(maxImportBytes); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart import")
+			return
+		}
+		mode := store.ImportMode(r.FormValue("mode"))
+		if mode != store.ImportModeMerge && mode != store.ImportModeReplace {
+			writeError(w, http.StatusBadRequest, "mode must be merge or replace")
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "import file is required")
+			return
+		}
+		defer file.Close()
+
+		var bundle exportBundle
+		decoder := json.NewDecoder(file)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&bundle); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid import JSON")
+			return
+		}
+		if bundle.SchemaVersion != exportSchemaVersion {
+			writeError(w, http.StatusBadRequest, "unsupported import schemaVersion")
+			return
+		}
+		if bundle.App != exportAppName {
+			writeError(w, http.StatusBadRequest, "unsupported import app")
+			return
+		}
+		result, err := db.ImportEvents(r.Context(), bundle.Events, mode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, result, nil)
 	})
 }
 
@@ -108,4 +203,76 @@ func writeJSON(w http.ResponseWriter, value any, err error) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func exportFilename(ext string) string {
+	return fmt.Sprintf("ai-usage-dashboard-%s.%s", time.Now().UTC().Format("20060102-150405"), ext)
+}
+
+func writeEventsCSV(w http.ResponseWriter, events []store.PortableEvent) error {
+	writer := csv.NewWriter(w)
+	if err := writer.Write([]string{
+		"timestamp",
+		"source",
+		"conversation_id",
+		"model",
+		"name",
+		"kind",
+		"success",
+		"duration_ms",
+		"input_tokens",
+		"cached_input_tokens",
+		"cache_creation_tokens",
+		"output_tokens",
+		"reasoning_output_tokens",
+		"total_tokens",
+		"estimated_cost_usd",
+		"dropped_content_fields",
+	}); err != nil {
+		return err
+	}
+	for _, event := range events {
+		if err := writer.Write([]string{
+			event.Timestamp,
+			event.Source,
+			event.ConversationID,
+			event.Model,
+			event.Name,
+			event.Kind,
+			formatBoolPtr(event.Success),
+			formatIntPtr(event.DurationMS),
+			strconv.FormatInt(event.InputTokens, 10),
+			strconv.FormatInt(event.CachedInputTokens, 10),
+			strconv.FormatInt(event.CacheCreationTokens, 10),
+			strconv.FormatInt(event.OutputTokens, 10),
+			strconv.FormatInt(event.ReasoningOutputTokens, 10),
+			strconv.FormatInt(event.TotalTokens, 10),
+			strconv.FormatFloat(event.EstimatedCostUSD, 'f', -1, 64),
+			strconv.Itoa(event.DroppedContentFields),
+		}); err != nil {
+			return err
+		}
+	}
+	writer.Flush()
+	return writer.Error()
+}
+
+func formatBoolPtr(value *bool) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.FormatBool(*value)
+}
+
+func formatIntPtr(value *int64) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.FormatInt(*value, 10)
 }

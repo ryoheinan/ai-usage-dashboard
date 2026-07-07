@@ -201,3 +201,165 @@ func TestStoreSeparatesSourceAndModelBreakdowns(t *testing.T) {
 		t.Fatalf("codex model breakdown = %+v, want only Codex row", codexModels)
 	}
 }
+
+func TestStoreExportEventsSortedAndFiltered(t *testing.T) {
+	db, err := Open(t.TempDir() + "/test.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	success := true
+	now := time.Now().UTC()
+	older := now.Add(-2 * time.Hour)
+	newer := now.Add(-time.Hour)
+	if err := db.InsertEvents(context.Background(), []Event{
+		{
+			Timestamp:   newer,
+			Source:      "claude-code",
+			Model:       "claude-test",
+			Name:        "claude_code.api_request",
+			Success:     &success,
+			TotalTokens: 200,
+		},
+		{
+			Timestamp:   older,
+			Source:      "codex",
+			Model:       "gpt-test",
+			Name:        "codex.api_request",
+			Success:     &success,
+			TotalTokens: 100,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := db.ExportEvents(context.Background(), now.Add(-3*time.Hour), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("ExportEvents() rows = %d, want 2: %+v", len(events), events)
+	}
+	if events[0].Source != "codex" || events[0].TotalTokens != 100 || events[1].Source != "claude-code" {
+		t.Fatalf("ExportEvents() order = %+v, want timestamp order", events)
+	}
+
+	events, err = db.ExportEvents(context.Background(), now.Add(-3*time.Hour), "claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Source != "claude-code" || events[0].TotalTokens != 200 {
+		t.Fatalf("filtered ExportEvents() = %+v, want Claude row only", events)
+	}
+}
+
+func TestStoreImportEventsMergeSkipsDuplicates(t *testing.T) {
+	db, err := Open(t.TempDir() + "/test.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	success := true
+	event := PortableEvent{
+		Timestamp:        time.Now().UTC().Format(time.RFC3339Nano),
+		Source:           "codex",
+		Model:            "gpt-test",
+		Name:             "codex.api_request",
+		Kind:             "log",
+		Success:          &success,
+		InputTokens:      100,
+		OutputTokens:     50,
+		TotalTokens:      150,
+		EstimatedCostUSD: 0.001,
+	}
+
+	result, err := db.ImportEvents(context.Background(), []PortableEvent{event}, ImportModeMerge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Inserted != 1 || result.Skipped != 0 {
+		t.Fatalf("first ImportEvents merge = %+v, want one insert", result)
+	}
+
+	result, err = db.ImportEvents(context.Background(), []PortableEvent{event, event}, ImportModeMerge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Inserted != 0 || result.Skipped != 2 {
+		t.Fatalf("second ImportEvents merge = %+v, want duplicate skips", result)
+	}
+
+	count, err := db.Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("count after duplicate merge = %d, want 1", count)
+	}
+}
+
+func TestStoreImportEventsReplace(t *testing.T) {
+	db, err := Open(t.TempDir() + "/test.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	success := true
+	if err := db.InsertEvents(context.Background(), []Event{{
+		Timestamp:   time.Now().UTC().Add(-time.Hour),
+		Source:      "codex",
+		Model:       "old-model",
+		Name:        "codex.api_request",
+		Success:     &success,
+		TotalTokens: 10,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	replacement := PortableEvent{
+		Timestamp:        time.Now().UTC().Format(time.RFC3339Nano),
+		Source:           "claude-code",
+		Model:            "new-model",
+		Name:             "claude_code.api_request",
+		Success:          &success,
+		TotalTokens:      300,
+		EstimatedCostUSD: 0.003,
+	}
+	result, err := db.ImportEvents(context.Background(), []PortableEvent{replacement}, ImportModeReplace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Replaced != 1 || result.Inserted != 1 || result.Skipped != 0 {
+		t.Fatalf("ImportEvents replace = %+v, want one replaced and inserted", result)
+	}
+
+	events, err := db.ExportEvents(context.Background(), time.Now().UTC().Add(-24*time.Hour), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Model != "new-model" || events[0].TotalTokens != 300 {
+		t.Fatalf("events after replace = %+v, want replacement only", events)
+	}
+}
+
+func TestStoreImportEventsRejectsInvalidPortableEvents(t *testing.T) {
+	db, err := Open(t.TempDir() + "/test.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	for name, event := range map[string]PortableEvent{
+		"missing timestamp": {Source: "codex"},
+		"invalid source":    {Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Source: "other"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := db.ImportEvents(context.Background(), []PortableEvent{event}, ImportModeMerge); err == nil {
+				t.Fatalf("ImportEvents accepted invalid event %+v", event)
+			}
+		})
+	}
+}
